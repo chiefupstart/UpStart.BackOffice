@@ -1,16 +1,13 @@
-import { Component, computed, effect, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ButtonModule } from 'primeng/button';
+import { DatePickerModule } from 'primeng/datepicker';
 import { DialogModule } from 'primeng/dialog';
 import { SelectModule } from 'primeng/select';
 import { TextareaModule } from 'primeng/textarea';
 import { ApiService } from '../../core/api.service';
 import { ConfirmDeleteService } from '../../core/confirm-delete.service';
-import {
-  formatDayHeading,
-  formatDurationMin,
-  parseDurationInput,
-} from './timesheet.utils';
+import { formatDurationMin, parseDurationInput } from './timesheet.utils';
 import type { Project, TimeEntry } from './time-entry.types';
 
 export type TimeEntryModalResult = 'saved' | 'started' | 'deleted' | 'cancelled';
@@ -18,16 +15,31 @@ export type TimeEntryModalResult = 'saved' | 'started' | 'deleted' | 'cancelled'
 @Component({
   selector: 'app-time-entry-modal',
   standalone: true,
-  imports: [FormsModule, DialogModule, ButtonModule, TextareaModule, SelectModule],
+  imports: [FormsModule, DialogModule, ButtonModule, TextareaModule, SelectModule, DatePickerModule],
   template: `
     <p-dialog
-      [header]="dialogTitle()"
       [(visible)]="visible"
       [modal]="true"
       [closable]="true"
       [style]="{ width: '32rem' }"
       (onHide)="onDialogHide()"
     >
+      <ng-template pTemplate="header">
+        <div class="entry-dialog-header">
+          <span>{{ isEdit() ? 'Edit time entry for' : 'New time entry for' }}</span>
+          <p-datepicker
+            [ngModel]="entryDay()"
+            (ngModelChange)="onEntryDayChange($event)"
+            dateFormat="DD, dd M"
+            [showIcon]="true"
+            iconDisplay="input"
+            appendTo="body"
+            styleClass="entry-day-picker"
+            inputStyleClass="entry-day-picker-input"
+            ariaLabel="Entry date"
+          />
+        </div>
+      </ng-template>
       <div class="entry-form">
         <div class="form-field">
           <label for="entry-project">Project</label>
@@ -195,6 +207,40 @@ export type TimeEntryModalResult = 'saved' | 'started' | 'deleted' | 'cancelled'
     </p-dialog>
   `,
   styles: `
+    .entry-dialog-header {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.35rem 0.5rem;
+      font-size: 1.125rem;
+      font-weight: 600;
+      color: #2d2d2d;
+    }
+
+    :host ::ng-deep .entry-day-picker.p-datepicker,
+    :host ::ng-deep .entry-day-picker {
+      width: auto;
+    }
+
+    :host ::ng-deep .entry-day-picker-input,
+    :host ::ng-deep .entry-day-picker .p-inputtext {
+      width: auto;
+      min-width: 12.5rem;
+      border: none;
+      background: transparent;
+      padding: 0.15rem 1.75rem 0.15rem 0.15rem;
+      font-size: 1.125rem;
+      font-weight: 600;
+      color: #7c3aed;
+      box-shadow: none;
+      cursor: pointer;
+    }
+
+    :host ::ng-deep .entry-day-picker .p-datepicker-input-icon-container,
+    :host ::ng-deep .entry-day-picker .p-datepicker-dropdown {
+      color: #7c3aed;
+    }
+
     .entry-form {
       display: flex;
       flex-direction: column;
@@ -349,11 +395,6 @@ export class TimeEntryModalComponent {
       clientName: p.client.name,
     })),
   );
-
-  readonly dialogTitle = computed(() => {
-    const day = formatDayHeading(this.entryDay());
-    return this.isEdit() ? `Edit time entry for ${day}` : `New time entry for ${day}`;
-  });
 
   readonly canSave = computed(() => {
     const parsed = parseDurationInput(this.durationInput());
@@ -577,6 +618,12 @@ export class TimeEntryModalComponent {
     }
   }
 
+  onEntryDayChange(value: Date | Date[] | null) {
+    const next = Array.isArray(value) ? value[0] : value;
+    if (!(next instanceof Date) || Number.isNaN(next.getTime())) return;
+    this.entryDay.set(next);
+  }
+
   onDialogHide() {
     this.error.set(null);
   }
@@ -591,6 +638,13 @@ export class TimeEntryModalComponent {
     const d = new Date(this.entryDay());
     d.setHours(hour, 0, 0, 0);
     return d;
+  }
+
+  private startedAtOnEntryDay(source: Date): Date {
+    const day = this.entryDay();
+    const next = new Date(source);
+    next.setFullYear(day.getFullYear(), day.getMonth(), day.getDate());
+    return next;
   }
 
   private selectedProjectTaskId(): string {
@@ -642,7 +696,7 @@ export class TimeEntryModalComponent {
 
     try {
       const startedAt = existing
-        ? new Date(existing.startedAt)
+        ? this.startedAtOnEntryDay(new Date(existing.startedAt))
         : this.dayStartAt();
       const stoppedAt = new Date(startedAt.getTime() + durationMin * 60_000);
 
